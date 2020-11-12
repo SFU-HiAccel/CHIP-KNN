@@ -408,7 +408,7 @@ def GenerateTopLevel(_core_krnl_file, _parallel_sort, _num_PE, _krnl_top_name, _
     _core_krnl_file.append('    hls::stream<pkt> &out)' + '\n')
     _core_krnl_file.append('{' + '\n')
     for idx in range (_num_PE):
-        _core_krnl_file.append('#pragma HLS INTERFACE m_axi port=searchSpace_' + str(idx) + ' offset=slave bundle=gmem0' + '\n')
+        _core_krnl_file.append('#pragma HLS INTERFACE m_axi port=searchSpace_' + str(idx) + ' offset=slave bundle=gmem' + str(idx) + '\n')
         _core_krnl_file.append('#pragma HLS INTERFACE s_axilite port=searchSpace_' + str(idx) + ' bundle=control' + '\n')
         _core_krnl_file.append('#pragma HLS INTERFACE s_axilite port=start_id_' + str(idx) + ' bundle=control' + '\n')
     _core_krnl_file.append('#pragma HLS INTERFACE axis port=out' + '\n')
@@ -611,8 +611,9 @@ def Generate_GlobalSort_Design(_num_slr):
 
     sort_file.append('  for (unsigned int i=0; i<TOP; ++i){' + '\n')
     sort_file.append('#pragma HLS PIPELINE II=1' + '\n')
-    sort_file.append('      pkt v' + str(i) + '_id = in' + str(i) + '.read();' + '\n')
-    sort_file.append('      local_kNearstId_partial[' + str(i) + '][i] = v' + str(i) + '_id.data;' + '\n')
+    for i in range (_num_slr):
+        sort_file.append('      pkt v' + str(i) + '_id = in' + str(i) + '.read();' + '\n')
+        sort_file.append('      local_kNearstId_partial[' + str(i) + '][i] = v' + str(i) + '_id.data;' + '\n')
     sort_file.append('  }' + '\n\n')
 
     sort_file.append('	seq_global_merge(local_kNearstDist_partial, local_kNearstId_partial, output_dist, output_id);' + '\n\n')
@@ -1095,7 +1096,7 @@ def Generate_MakeFile(_num_slr, _kernel_freq):
     make_file.append('BINARY_CONTAINER_knn_OBJS += $(TEMP_DIR)/krnl_globalSort.xo' + '\n')
     make_file.append('CP = cp -rf' + '\n\n')
     make_file.append('.PHONY: all clean cleanall docs emconfig' + '\n')
-    make_file.append('all: check-devices $(EXECUTABLE) $(BINARY_CONTAINERS) emconfig sd_card' + '\n\n')
+    make_file.append('all: check-devices $(EXECUTABLE) $(BINARY_CONTAINERS) emconfig' + '\n\n')
     make_file.append('.PHONY: exe' + '\n')
     make_file.append('exe: $(EXECUTABLE)' + '\n\n')
     make_file.append('.PHONY: build' + '\n')
