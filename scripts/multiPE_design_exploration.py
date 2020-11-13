@@ -49,6 +49,7 @@ for design in singlePE_designs_specs:
         this_slr_num_PE = min(this_slr_num_PE, tmp_num_PE)
         num_PE_SLR[slr_idx] = this_slr_num_PE
         total_num_PE += this_slr_num_PE
+    final_num_PE = total_num_PE
     if (total_num_PE*int(design['port_width']) > num_mem_banks*512):
         final_num_PE = num_mem_banks*512/int(design['port_width'])
     if (total_num_PE > final_num_PE):
@@ -78,5 +79,5 @@ designSrcDir = os.path.join(baseDesignDir, designSrcDirName)
 os.mkdir(designSrcDir)
 os.chdir(designSrcDir)
 Generate_MultiPE_Design(N, D, Dist, K, int(max_design_spec['port_width']), int(max_design_spec['buf_size']), memory_type, max_total_num_pe, max_slr_pe)
-pe_bank_location = Generate_Host_Code(memory_type, num_mem_banks, max_total_num_pe, num_SLR, max_slr_pe)
+pe_bank_location = Generate_Host_Code(memory_type, num_mem_banks, max_total_num_pe, max_slr_pe)
 Generate_Connectivity_Map(memory_type, pe_bank_location, max_slr_pe)

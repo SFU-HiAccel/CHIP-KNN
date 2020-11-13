@@ -19,12 +19,12 @@ from bandwidth_interpolation import *
 # _slr_num_pe: number of PEs for each SLR 
 '''
 def Generate_MultiPE_Design(_N, _D, _Dist, _K, _port_width, _buf_size, _memory_type, _total_num_pe, _slr_num_pe):
-    parallel_sort = Generate_Design_Configuration(_N, _D, _Dist, _K, _port_width, _buf_size, _memory_type, _total_num_pe, len(_slr_num_pe))
+    parallel_sort = Generate_Design_Configuration(_N, _D, _Dist, _K, _port_width, _buf_size, _memory_type, _total_num_pe, _slr_num_pe)
     for slr_idx in range (len(_slr_num_pe)):
         Generate_PartialKNN_Design(parallel_sort, _slr_num_pe[slr_idx], 'krnl_partialKnn_SLR'+str(slr_idx), 'SLR'+str(slr_idx)) # parallel_sort, num_PE, kernel_name, SLR_name)
-    Generate_GlobalSort_Design(len(_slr_num_pe))
+    Generate_GlobalSort_Design(_slr_num_pe)
 
-def Generate_Design_Configuration(_N, _D, _Dist, _K, _port_width, _buf_size, _memory_type, _total_num_pe, _num_slr):
+def Generate_Design_Configuration(_N, _D, _Dist, _K, _port_width, _buf_size, _memory_type, _total_num_pe, _slr_num_pe):
     config_file = 'krnl_config.h'
 
     INPUT_DIM = _D
@@ -33,7 +33,12 @@ def Generate_Design_Configuration(_N, _D, _Dist, _K, _port_width, _buf_size, _me
     DISTANCE_METRIC = _Dist
 
     NUM_KERNEL = _total_num_pe
-    NUM_SLR = _num_slr
+
+    NUM_USED_SLR = 0
+    for i in range (len(_slr_num_pe)):
+        if (_slr_num_pe[i] > 0):
+            NUM_USED_SLR += 1
+    
     DWIDTH = _port_width
     BUFFER_SIZE_DEFAULT = _buf_size * 8 #convert to # of bit
     MAX_FLT = "3.402823e+38f"
@@ -80,7 +85,7 @@ def Generate_Design_Configuration(_N, _D, _Dist, _K, _port_width, _buf_size, _me
     new_file.append("#define NUM_SP_PTS_PADDED " + "(" + str(int(NUM_SP_PTS_PADDED)) + ")" + "\n")
     new_file.append("#define DISTANCE_METRIC " + "(" + str(DISTANCE_METRIC) + ")" + "\n")
     new_file.append("#define NUM_KERNEL " + "(" + str(NUM_KERNEL) + ")" + "\n")
-    new_file.append("#define NUM_SLR " + "(" + str(NUM_SLR) + ")" + "\n")
+    new_file.append("#define NUM_USED_SLR " + "(" + str(NUM_USED_SLR) + ")" + "\n")
     new_file.append("#define MAX_FLT " + "(" + MAX_FLT + ")" + "\n")
 
     new_file.append("\n")
@@ -130,6 +135,8 @@ def Generate_Design_Configuration(_N, _D, _Dist, _K, _port_width, _buf_size, _me
     return PARALLEL_SORT
 
 def Generate_PartialKNN_Design(_parallel_sort, _num_PE, _krnl_top_name, _SLR_name):
+    if (_num_PE < 1):
+        return
     core_krnl_file_name = _krnl_top_name + '.cpp'
     core_krnl_file = []
 
@@ -545,27 +552,27 @@ def GenerateTopLevel(_core_krnl_file, _parallel_sort, _num_PE, _krnl_top_name, _
     _core_krnl_file.append('}' + '\n')
     _core_krnl_file.append('}' + '\n')
 
-def Generate_GlobalSort_Design(_num_slr):
+def Generate_GlobalSort_Design(_slr_num_pe):
     sort_file_name = 'krnl_globalSort.cpp'
     sort_file = []
 
     sort_file.append('#include "krnl_config.h"' + '\n')
     sort_file.append('extern "C" {' + '\n')
-    sort_file.append('void seq_global_merge(float local_kNearstDist_partial[NUM_SLR][TOP],' + '\n')
-    sort_file.append('						int local_kNearstId_partial[NUM_SLR][TOP], ' + '\n')
+    sort_file.append('void seq_global_merge(float local_kNearstDist_partial[NUM_USED_SLR][TOP],' + '\n')
+    sort_file.append('						int local_kNearstId_partial[NUM_USED_SLR][TOP], ' + '\n')
     sort_file.append('						float* dist, int* id)' + '\n')
     sort_file.append('{' + '\n')
     sort_file.append('#pragma HLS INLINE OFF' + '\n')
-    sort_file.append('	int idx[NUM_SLR];' + '\n')
+    sort_file.append('	int idx[NUM_USED_SLR];' + '\n')
     sort_file.append('	#pragma HLS ARRAY_PARTITION variable=idx complete dim=0' + '\n')
-    sort_file.append('	for (int i = 0; i < NUM_SLR; ++i){' + '\n')
+    sort_file.append('	for (int i = 0; i < NUM_USED_SLR; ++i){' + '\n')
     sort_file.append('	#pragma HLS UNROLL' + '\n')
     sort_file.append('		idx[i] = TOP-1;' + '\n')
     sort_file.append('	}' + '\n')
     sort_file.append('	for (int i = TOP-1; i >= 0; --i){' + '\n')
     sort_file.append('		float min_value = MAX_FLT;' + '\n')
     sort_file.append('		int min_idx = -1;' + '\n')
-    sort_file.append('		for (int j = 0; j < NUM_SLR; ++j){' + '\n')
+    sort_file.append('		for (int j = 0; j < NUM_USED_SLR; ++j){' + '\n')
     sort_file.append('		#pragma HLS PIPELINE II=1' + '\n')
     sort_file.append('			if (local_kNearstDist_partial[j][idx[j]] < min_value){' + '\n')
     sort_file.append('				min_value = local_kNearstDist_partial[j][idx[j]];' + '\n')
@@ -579,22 +586,28 @@ def Generate_GlobalSort_Design(_num_slr):
     sort_file.append('}' + '\n\n')
 
     sort_file.append('void krnl_globalSort(' + '\n')
-    for i in range (_num_slr):
-        sort_file.append('    hls::stream<pkt> &in' + str(i) + ',    // Internal Stream' + '\n')
+    input_idx = 0
+    for i in range (len(_slr_num_pe)):
+        if (_slr_num_pe[i] > 0):
+            sort_file.append('    hls::stream<pkt> &in' + str(input_idx) + ',    // Internal Stream' + '\n')
+            input_idx += 1
     sort_file.append('    float *output_knnDist,    // Output Result' + '\n')
     sort_file.append('    int *output_knnId         // Output Result' + '\n')
     sort_file.append(') {' + '\n')
-    for i in range (_num_slr):
-        sort_file.append('#pragma HLS INTERFACE axis port = in' + str(i) + '\n')
+    input_idx = 0
+    for i in range (len(_slr_num_pe)):
+        if (_slr_num_pe[i] > 0):
+            sort_file.append('#pragma HLS INTERFACE axis port = in' + str(input_idx) + '\n')
+            input_idx += 1
     sort_file.append('#pragma HLS INTERFACE m_axi port=output_knnDist offset=slave bundle=gmem1' + '\n')
     sort_file.append('#pragma HLS INTERFACE s_axilite port=output_knnDist bundle=control' + '\n')
     sort_file.append('#pragma HLS INTERFACE m_axi port=output_knnId offset=slave bundle=gmem1' + '\n')
     sort_file.append('#pragma HLS INTERFACE s_axilite port=output_knnId bundle=control' + '\n')
     sort_file.append('#pragma HLS INTERFACE s_axilite port=return bundle=control' + '\n\n')
 
-    sort_file.append('	float local_kNearstDist_partial[NUM_SLR][TOP];' + '\n')
+    sort_file.append('	float local_kNearstDist_partial[NUM_USED_SLR][TOP];' + '\n')
     sort_file.append('	#pragma HLS ARRAY_PARTITION variable=local_kNearstDist_partial complete dim=0' + '\n')
-    sort_file.append('	int local_kNearstId_partial[NUM_SLR][TOP];' + '\n')
+    sort_file.append('	int local_kNearstId_partial[NUM_USED_SLR][TOP];' + '\n')
     sort_file.append('	#pragma HLS ARRAY_PARTITION variable=local_kNearstId_partial complete dim=0' + '\n\n')
     sort_file.append('	float output_dist[TOP];' + '\n')
     sort_file.append('	#pragma HLS ARRAY_PARTITION variable=output_dist complete' + '\n')
@@ -603,17 +616,23 @@ def Generate_GlobalSort_Design(_num_slr):
 
     sort_file.append('    for (unsigned int i=0; i<TOP; ++i){' + '\n')
     sort_file.append('#pragma HLS PIPELINE II=1' + '\n')
-    for i in range (_num_slr):
-        sort_file.append('      pkt v' + str(i) + ' = in' + str(i) + '.read();' + '\n')
-        sort_file.append('      uint32_t v' + str(i) + '_item = v' + str(i) + '.data.range(31, 0);' + '\n')
-        sort_file.append('      local_kNearstDist_partial[' + str(i) + '][i] = *((float*)(&v' + str(i) + '_item));' + '\n')
+    input_idx = 0
+    for i in range (len(_slr_num_pe)):
+        if (_slr_num_pe[i] > 0):
+            sort_file.append('      pkt v' + str(input_idx) + ' = in' + str(input_idx) + '.read();' + '\n')
+            sort_file.append('      uint32_t v' + str(input_idx) + '_item = v' + str(input_idx) + '.data.range(31, 0);' + '\n')
+            sort_file.append('      local_kNearstDist_partial[' + str(input_idx) + '][i] = *((float*)(&v' + str(input_idx) + '_item));' + '\n')
+            input_idx += 1
     sort_file.append('  }' + '\n\n')
 
     sort_file.append('  for (unsigned int i=0; i<TOP; ++i){' + '\n')
     sort_file.append('#pragma HLS PIPELINE II=1' + '\n')
-    for i in range (_num_slr):
-        sort_file.append('      pkt v' + str(i) + '_id = in' + str(i) + '.read();' + '\n')
-        sort_file.append('      local_kNearstId_partial[' + str(i) + '][i] = v' + str(i) + '_id.data;' + '\n')
+    input_idx = 0
+    for i in range (len(_slr_num_pe)):
+        if (_slr_num_pe[i] > 0):
+            sort_file.append('      pkt v' + str(input_idx) + '_id = in' + str(input_idx) + '.read();' + '\n')
+            sort_file.append('      local_kNearstId_partial[' + str(input_idx) + '][i] = v' + str(input_idx) + '_id.data;' + '\n')
+            input_idx += 1
     sort_file.append('  }' + '\n\n')
 
     sort_file.append('	seq_global_merge(local_kNearstDist_partial, local_kNearstId_partial, output_dist, output_id);' + '\n\n')
@@ -631,7 +650,7 @@ def Generate_GlobalSort_Design(_num_slr):
         # actually write the lines
         f.writelines(sort_file)
 
-def Generate_Host_Code(_memory_type, _num_mem_banks, _total_num_pe, _num_slr, _slr_num_pe):
+def Generate_Host_Code(_memory_type, _num_mem_banks, _total_num_pe, _slr_num_pe):
     host_file_name = 'host.cpp'
     host_file = []
 
@@ -753,8 +772,11 @@ def Generate_Host_Code(_memory_type, _num_mem_banks, _total_num_pe, _num_slr, _s
     host_file.append('    std::string binaryFile = argv[1];' + '\n')
     host_file.append('    cl_int err;' + '\n')
     host_file.append('    cl::CommandQueue q;' + '\n')
-    for i in range(_num_slr):
-        host_file.append('    cl::Kernel cmpt_krnl_SLR' + str(i) + ';' + '\n')
+
+    for i in range(len(_slr_num_pe)):
+        if (_slr_num_pe[i] > 0):
+            host_file.append('    cl::Kernel cmpt_krnl_SLR' + str(i) + ';' + '\n')
+    
     host_file.append('    cl::Kernel aggregate_krnl;' + '\n')
     host_file.append('    cl::Context context;' + '\n')
     host_file.append('    auto devices = xcl::get_xil_devices();' + '\n')
@@ -779,10 +801,11 @@ def Generate_Host_Code(_memory_type, _num_mem_banks, _total_num_pe, _num_slr, _s
     host_file.append('        } else {' + '\n')
     host_file.append('            std::cout << "Device[" << i << "]: program successful!\\n";' + '\n')
     host_file.append('            std::string krnl_name_full;' + '\n')
-    for i in range(_num_slr):
-        host_file.append('            krnl_name_full = "krnl_partialKnn_SLR' + str(i) + ':{krnl_partialKnn_SLR' + str(i) + '_1}";' + '\n')
-        host_file.append('            OCL_CHECK(err, cmpt_krnl_SLR' + str(i) + ' = cl::Kernel(program, krnl_name_full.c_str(), &err));' + '\n')
-        host_file.append('            printf("Creating a kernel [%s] \\n", krnl_name_full.c_str());' + '\n')
+    for i in range(len(_slr_num_pe)):
+        if (_slr_num_pe[i] > 0):
+            host_file.append('            krnl_name_full = "krnl_partialKnn_SLR' + str(i) + ':{krnl_partialKnn_SLR' + str(i) + '_1}";' + '\n')
+            host_file.append('            OCL_CHECK(err, cmpt_krnl_SLR' + str(i) + ' = cl::Kernel(program, krnl_name_full.c_str(), &err));' + '\n')
+            host_file.append('            printf("Creating a kernel [%s] \\n", krnl_name_full.c_str());' + '\n')
     host_file.append('            krnl_name_full = "krnl_globalSort:{krnl_globalSort_1}";' + '\n')
     host_file.append('            OCL_CHECK(err, aggregate_krnl = cl::Kernel(program, krnl_name_full.c_str(), &err));' + '\n')
     host_file.append('            printf("Creating a kernel [%s] \\n", krnl_name_full.c_str());' + '\n')
@@ -947,20 +970,22 @@ def Generate_Host_Code(_memory_type, _num_mem_banks, _total_num_pe, _num_slr, _s
     host_file.append('' + '\n')
     host_file.append('    int i = 0;' + '\n')
     host_file.append('    int count = 0;' + '\n')
-    for i in range (_num_slr):
-        host_file.append('    int NUM_KERNEL_SLR' + str(i) + ' = ' + str(_slr_num_pe[i]) + ';' + '\n')
-    for i in range (_num_slr):
-        host_file.append('    for (i = 0; i < NUM_KERNEL_SLR' + str(i) + '; i++) {' + '\n')
-        host_file.append('        //Setting the compute kernel arguments' + '\n')
-        host_file.append('        OCL_CHECK(err, err = cmpt_krnl_SLR' + str(i) + '.setArg(i*2+0, buffer_input_searchspace[count+i])); ' + '\n')
-        host_file.append('        OCL_CHECK(err, err = cmpt_krnl_SLR' + str(i) + '.setArg(i*2+1, (count+i)*part_size/INPUT_DIM)); ' + '\n')
-        host_file.append('    }' + '\n')
-        host_file.append('    //Invoking the compute kernels' + '\n')
-        host_file.append('    OCL_CHECK(err, err = q.enqueueTask(cmpt_krnl_SLR' + str(i) + '));' + '\n')
-        host_file.append('    count += i;' + '\n')
+    for i in range(len(_slr_num_pe)):
+        if (_slr_num_pe[i] > 0):
+            host_file.append('    int NUM_KERNEL_SLR' + str(i) + ' = ' + str(_slr_num_pe[i]) + ';' + '\n')
+    for i in range(len(_slr_num_pe)):
+        if (_slr_num_pe[i] > 0):
+            host_file.append('    for (i = 0; i < NUM_KERNEL_SLR' + str(i) + '; i++) {' + '\n')
+            host_file.append('        //Setting the compute kernel arguments' + '\n')
+            host_file.append('        OCL_CHECK(err, err = cmpt_krnl_SLR' + str(i) + '.setArg(i*2+0, buffer_input_searchspace[count+i])); ' + '\n')
+            host_file.append('        OCL_CHECK(err, err = cmpt_krnl_SLR' + str(i) + '.setArg(i*2+1, (count+i)*part_size/INPUT_DIM)); ' + '\n')
+            host_file.append('    }' + '\n')
+            host_file.append('    //Invoking the compute kernels' + '\n')
+            host_file.append('    OCL_CHECK(err, err = q.enqueueTask(cmpt_krnl_SLR' + str(i) + '));' + '\n')
+            host_file.append('    count += i;' + '\n')
     host_file.append('' + '\n')
     host_file.append('    //Setting the aggregate kernel arguments' + '\n')
-    host_file.append('    int arg_idx = NUM_SLR;' + '\n')
+    host_file.append('    int arg_idx = NUM_USED_SLR;' + '\n')
     host_file.append('    OCL_CHECK(err, err = aggregate_krnl.setArg(arg_idx, buffer_output_dist_result));' + '\n')
     host_file.append('    OCL_CHECK(err, err = aggregate_krnl.setArg(arg_idx+1, buffer_output_id_result));' + '\n')
     host_file.append('    //Invoking the aggregate kernel' + '\n')
@@ -1002,17 +1027,22 @@ def Generate_Connectivity_Map(_memory_type, _pe_bank_location, _slr_num_pe):
 
     connectivity_file.append('[connectivity]' + '\n\n')
     for slr_idx in range (len(_slr_num_pe)):
-        connectivity_file.append('slr=krnl_partialKnn_SLR' + str(slr_idx) + '_1:SLR' + str(slr_idx) + '\n')
-        for pe_idx in range (_slr_num_pe[slr_idx]):
-            if (_memory_type == 'DDR4'):
-                connectivity_file.append('sp=krnl_partialKnn_SLR' + str(slr_idx) + '_1.searchSpace_' + str(pe_idx) + ':DDR[' + str(_pe_bank_location[overall_pe_idx]) + ']' + '\n')
-            elif (_memory_type == 'HBM2'):
-                connectivity_file.append('sp=krnl_partialKnn_SLR' + str(slr_idx) + '_1.searchSpace_' + str(pe_idx) + ':HBM[' + str(_pe_bank_location[overall_pe_idx]) + ']' + '\n')
-            overall_pe_idx += 1
+        if (_slr_num_pe[slr_idx] > 0):
+            connectivity_file.append('slr=krnl_partialKnn_SLR' + str(slr_idx) + '_1:SLR' + str(slr_idx) + '\n')
+            for pe_idx in range (_slr_num_pe[slr_idx]):
+                if (_memory_type == 'DDR4'):
+                    connectivity_file.append('sp=krnl_partialKnn_SLR' + str(slr_idx) + '_1.searchSpace_' + str(pe_idx) + ':DDR[' + str(_pe_bank_location[overall_pe_idx]) + ']' + '\n')
+                elif (_memory_type == 'HBM2'):
+                    connectivity_file.append('sp=krnl_partialKnn_SLR' + str(slr_idx) + '_1.searchSpace_' + str(pe_idx) + ':HBM[' + str(_pe_bank_location[overall_pe_idx]) + ']' + '\n')
+                overall_pe_idx += 1
     connectivity_file.append('' + '\n')
 
+    input_idx = 0
     for slr_idx in range (len(_slr_num_pe)):
-        connectivity_file.append('stream_connect=krnl_partialKnn_SLR' + str(slr_idx) + '_1.out:krnl_globalSort_1.in' + str(slr_idx) + '\n')
+        if (_slr_num_pe[slr_idx] > 0):
+            connectivity_file.append('stream_connect=krnl_partialKnn_SLR' + str(slr_idx) + '_1.out:krnl_globalSort_1.in' + str(input_idx) + '\n')
+            input_idx += 1
+    
     connectivity_file.append('' + '\n')
 
     connectivity_file.append('slr=krnl_globalSort_1:SLR1' + '\n')
@@ -1025,7 +1055,8 @@ def Generate_Connectivity_Map(_memory_type, _pe_bank_location, _slr_num_pe):
     connectivity_file.append('' + '\n')
 
     for slr_idx in range (len(_slr_num_pe)):
-        connectivity_file.append('nk=krnl_partialKnn_SLR' + str(slr_idx) + ':1' + '\n')
+        if (_slr_num_pe[slr_idx] > 0):
+            connectivity_file.append('nk=krnl_partialKnn_SLR' + str(slr_idx) + ':1' + '\n')
     connectivity_file.append('nk=krnl_globalSort:1' + '\n')
 
     with open(connectivity_file_name, 'w') as f:
