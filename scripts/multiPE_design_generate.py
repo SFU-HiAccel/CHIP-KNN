@@ -1065,7 +1065,7 @@ def Generate_Connectivity_Map(_memory_type, _pe_bank_location, _slr_num_pe):
         # actually write the lines
         f.writelines(connectivity_file)
 
-def Generate_MakeFile(_num_slr, _kernel_freq):
+def Generate_MakeFile(_num_slr_pe, _kernel_freq):
     make_file_name = 'Makefile'
     make_file = []
 
@@ -1122,8 +1122,9 @@ def Generate_MakeFile(_num_slr, _kernel_freq):
     make_file.append('CMD_ARGS = $(BUILD_DIR)/knn.xclbin' + '\n')
     make_file.append('EMCONFIG_DIR = $(TEMP_DIR)' + '\n\n')
     make_file.append('BINARY_CONTAINERS += $(BUILD_DIR)/knn.xclbin' + '\n')
-    for i in range (_num_slr):
-        make_file.append('BINARY_CONTAINER_knn_OBJS += $(TEMP_DIR)/krnl_partialKnn_SLR' + str(i) + '.xo' + '\n')
+    for i in range (len(_num_slr_pe)):
+        if (_num_slr_pe[i] > 0):
+            make_file.append('BINARY_CONTAINER_knn_OBJS += $(TEMP_DIR)/krnl_partialKnn_SLR' + str(i) + '.xo' + '\n')
     make_file.append('BINARY_CONTAINER_knn_OBJS += $(TEMP_DIR)/krnl_globalSort.xo' + '\n')
     make_file.append('CP = cp -rf' + '\n\n')
     make_file.append('.PHONY: all clean cleanall docs emconfig' + '\n')
@@ -1133,11 +1134,12 @@ def Generate_MakeFile(_num_slr, _kernel_freq):
     make_file.append('.PHONY: build' + '\n')
     make_file.append('build: $(BINARY_CONTAINERS)' + '\n\n')
 
-    for i in range (_num_slr):
-        make_file.append('# Building kernel' + '\n')
-        make_file.append('$(TEMP_DIR)/krnl_partialKnn_SLR' + str(i) + '.xo: src/krnl_partialKnn_SLR' + str(i) + '.cpp' + '\n')
-        make_file.append('	mkdir -p $(TEMP_DIR)' + '\n')
-        make_file.append('	$(VPP) $(CLFLAGS) --temp_dir $(TEMP_DIR) -c -k krnl_partialKnn_SLR' + str(i) + ' -I\'$(<D)\' -o\'$@\' \'$<\'' + '\n')
+    for i in range (len(_num_slr_pe)):
+        if (_num_slr_pe[i] > 0):
+            make_file.append('# Building kernel' + '\n')
+            make_file.append('$(TEMP_DIR)/krnl_partialKnn_SLR' + str(i) + '.xo: src/krnl_partialKnn_SLR' + str(i) + '.cpp' + '\n')
+            make_file.append('	mkdir -p $(TEMP_DIR)' + '\n')
+            make_file.append('	$(VPP) $(CLFLAGS) --temp_dir $(TEMP_DIR) -c -k krnl_partialKnn_SLR' + str(i) + ' -I\'$(<D)\' -o\'$@\' \'$<\'' + '\n')
     make_file.append('$(TEMP_DIR)/krnl_globalSort.xo: src/krnl_globalSort.cpp' + '\n')
     make_file.append('	mkdir -p $(TEMP_DIR)' + '\n')
     make_file.append('	$(VPP) $(CLFLAGS) --temp_dir $(TEMP_DIR) -c -k krnl_globalSort -I\'$(<D)\' -o\'$@\' \'$<\'' + '\n')

@@ -112,7 +112,7 @@ def Generate_Design_Configuration(_N, _D, _Dist, _K, _port_width, _buf_size, _me
         new_file.append("const int DIS_CALCULATION_II = " + str(int(DIS_CALCULATION_II)) + ";\n")
 
     new_file.append("\n")
-    NUM_ITERATIONS = 5000
+    NUM_ITERATIONS = 5
     new_file.append("const int NUM_ITERATIONS = " + str(int(NUM_ITERATIONS)) + ";\n")
         
     with open(config_file, 'w') as f:

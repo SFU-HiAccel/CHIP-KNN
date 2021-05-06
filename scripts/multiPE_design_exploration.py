@@ -73,7 +73,7 @@ os.mkdir(baseDesignDir)
 os.chdir(baseDesignDir)
 os.system("cp -R ../../common .")
 os.system("cp ../../utils.mk .")
-Generate_MakeFile(num_SLR, kernel_frequency)
+Generate_MakeFile(max_slr_pe, kernel_frequency)
 designSrcDirName = 'src'
 designSrcDir = os.path.join(baseDesignDir, designSrcDirName)
 os.mkdir(designSrcDir)
