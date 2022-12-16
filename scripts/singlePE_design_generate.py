@@ -67,7 +67,7 @@ def Generate_Design_Configuration(_N, _D, _Dist, _K, _port_width, _buf_size, _me
     new_file.append("#define NUM_SP_PTS " + "(" + str(NUM_SP_PTS) + ")" + "\n")
 
     NUM_SP_PTS_PER_KRNL = math.ceil(NUM_SP_PTS / NUM_KERNEL)
-    NUM_OF_TILES = math.floor(NUM_SP_PTS_PER_KRNL * INPUT_DIM * 32 / BUFFER_SIZE_DEFAULT)
+    NUM_OF_TILES = max(math.floor(NUM_SP_PTS_PER_KRNL * INPUT_DIM * 32 / BUFFER_SIZE_DEFAULT), 1.0)
     BUFFER_SIZE_PADDED = math.ceil(NUM_SP_PTS_PER_KRNL * INPUT_DIM * 32 / NUM_OF_TILES / 1024 / 8) * 1024 * 8 
     NUM_SP_PTS_PER_KRNL_PADDED = BUFFER_SIZE_PADDED * NUM_OF_TILES / INPUT_DIM / 32
     NUM_SP_PTS_PADDED = NUM_SP_PTS_PER_KRNL_PADDED * NUM_KERNEL
