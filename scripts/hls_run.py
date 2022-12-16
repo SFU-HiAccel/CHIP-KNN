@@ -10,7 +10,7 @@ import re
 '''
 def Run_HLS_Synthesis(_FPGA_part_name):
     Gen_HLS_TCL_Script("run_hls.tcl", _FPGA_part_name)
-    os.system("vivado_hls run_hls.tcl")
+    os.system("vitis_hls run_hls.tcl")
 
 def Gen_HLS_TCL_Script(_TCL_script_name, _FPGA_part_name):
     hls_tcl_file_name = _TCL_script_name
