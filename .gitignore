@@ -127,3 +127,15 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+
+# 
+*.swp
+*KENNY_*
+*.xo
+**/knn_floorplan.tcl
+**/emconfig.json
+**/build_script/run*
+*build_dir.hw*
+*_x.*
+*.prj*

@@ -2,82 +2,117 @@
 import os
 import re
 import copy
+import math
 from config import *
-from multiPE_design_generate import Generate_MultiPE_Design, Generate_Host_Code, Generate_Connectivity_Map, Generate_MakeFile
+from multiPE_design_generate import Generate_MultiPE_Design
+from run_commands import Run_software_emulation
+import supporting_code_generation as suppcodegen
 
-singlePEs_evaluation_file_name = "singlePE_perf_results.log"
 
-with open(singlePEs_evaluation_file_name, 'r') as f:
-    # Read the file contents and generate a list with each line
-    lines = f.readlines()
+def read_singlePE_specs():
+    singlePEs_evaluation_file_name = "singlePE_perf_results.log"
 
-singlePE_designs_specs = []
-knn_parameters = {}
+    with open(singlePEs_evaluation_file_name, 'r') as f:
+        # Read the file contents and generate a list with each line
+        lines = f.readlines()
 
-x = lines[0].split(',')
-for item in x:
-    knn_parameters[item.strip()] = -1
+    knn_parameters = {}
 
-for idx in range (1, len(lines)):
-    singlePE_design = lines[idx]
-    y = singlePE_design.split(',')
-    this_param = knn_parameters.copy()
-    for i in range (len(y)):
-        this_param[x[i].strip()] = y[i].strip()
-    singlePE_designs_specs.append(this_param)
+    param_names = lines[0].split(',')
+    for item in param_names:
+        knn_parameters[item.strip()] = -1
 
-#enumerate all design choices to determine the max number of PEs base on SLR resource and # banks
-max_bw_utilization = 0.0
-max_total_num_pe = 0
-max_slr_pe = []
-max_design_spec = {}
-for design in singlePE_designs_specs:
-    total_num_PE = 0
-    num_PE_SLR = []
-    for slr_idx in range(num_SLR):
-        num_PE_SLR.append(-1)
-        this_slr_num_PE = 99999
-        tmp_num_PE = int((float(SLR_resource[slr_idx]['BRAM']) * resource_limit) / float(design['BRAM']))
-        this_slr_num_PE = min(this_slr_num_PE, tmp_num_PE)
-        tmp_num_PE = int((float(SLR_resource[slr_idx]['DSP']) * resource_limit) / float(design['DSP']))
-        this_slr_num_PE = min(this_slr_num_PE, tmp_num_PE)
-        tmp_num_PE = int((float(SLR_resource[slr_idx]['FF']) * resource_limit) / float(design['FF']))
-        this_slr_num_PE = min(this_slr_num_PE, tmp_num_PE)
-        tmp_num_PE = int((float(SLR_resource[slr_idx]['LUT']) * resource_limit) / float(design['LUT']))
-        this_slr_num_PE = min(this_slr_num_PE, tmp_num_PE)
-        tmp_num_PE = int((float(SLR_resource[slr_idx]['URAM']) * resource_limit) / float(design['URAM']))
-        this_slr_num_PE = min(this_slr_num_PE, tmp_num_PE)
-        num_PE_SLR[slr_idx] = this_slr_num_PE
-        total_num_PE += this_slr_num_PE
-    final_num_PE = total_num_PE
-    if (total_num_PE*int(design['port_width']) > num_mem_banks*512):
-        final_num_PE = num_mem_banks*512/int(design['port_width'])
-    if (total_num_PE > final_num_PE):
-        offset_PE = total_num_PE - final_num_PE
-        for i in range (offset_PE):
-            num_PE_SLR[num_PE_SLR.index(max(num_PE_SLR))] -=1
-    print 'bw_now:{} bw_before:{}'.format(float(final_num_PE)*float(design['bw_usage']), max_bw_utilization)
-    if (float(final_num_PE)*float(design['bw_usage']) > max_bw_utilization):
-        max_bw_utilization = float(final_num_PE)*float(design['bw_usage'])
-        max_total_num_pe = final_num_PE
-        max_slr_pe = copy.deepcopy(num_PE_SLR)
-        max_design_spec = design.copy()
-    print '{} - {} {} {}'.format(final_num_PE, num_PE_SLR[0], num_PE_SLR[1], num_PE_SLR[2])
+    singlePE_synth_values = lines[1].split(',')
+    design_specs = knn_parameters.copy()
+    for i in range (len(singlePE_synth_values)):
+        design_specs[param_names[i].strip()] = singlePE_synth_values[i].strip()
 
-print 'bw_usage:{} #PE:{} - {} {} {}'.format(max_bw_utilization, max_total_num_pe, max_slr_pe[0], max_slr_pe[1], max_slr_pe[2])
+    return design_specs
 
-baseDir = os.getcwd()
-genDesignDirName = 'gen_design'
-baseDesignDir = os.path.join(baseDir, genDesignDirName)
-os.mkdir(baseDesignDir)
-os.chdir(baseDesignDir)
-os.system("cp -R ../../common .")
-os.system("cp ../../utils.mk .")
-Generate_MakeFile(max_slr_pe, kernel_frequency)
-designSrcDirName = 'src'
-designSrcDir = os.path.join(baseDesignDir, designSrcDirName)
-os.mkdir(designSrcDir)
-os.chdir(designSrcDir)
-Generate_MultiPE_Design(N, D, Dist, K, int(max_design_spec['port_width']), int(max_design_spec['buf_size']), memory_type, max_total_num_pe, max_slr_pe)
-pe_bank_location = Generate_Host_Code(memory_type, num_mem_banks, max_total_num_pe, max_slr_pe)
-Generate_Connectivity_Map(memory_type, pe_bank_location, max_slr_pe)
+
+
+
+def create_folders_and_files():
+    baseDir = os.getcwd()
+    genDesignDirName = 'gen_multiPE_design'
+    baseDesignDir = os.path.join(baseDir, genDesignDirName)
+    os.mkdir(baseDesignDir)
+
+    ###
+    os.chdir(baseDesignDir)
+    os.system("cp -R ../../common .")
+    os.system("cp ../../utils.mk .")
+    suppcodegen.Generate_MakeFile(kernel_frequency, _fpga_part_name = FPGA_part_name)
+
+    designSrcDirName = 'src'
+    designSrcDir = os.path.join(baseDesignDir, designSrcDirName)
+    os.mkdir(designSrcDir)
+    buildDirName = 'build'
+    buildDir = os.path.join(baseDesignDir, buildDirName)
+    os.mkdir(buildDir)
+
+    ###
+    os.chdir(designSrcDir)
+    knn_config = Generate_MultiPE_Design(N, D, Dist, K, max_port_width, memory_type, total_num_PE)
+    suppcodegen.Generate_Host_Code(total_num_PE, knn_config)
+    suppcodegen.Generate_Connectivity_Map(memory_type, total_num_PE, max_port_width)
+
+    ###
+    os.chdir(buildDir)
+    suppcodegen.Generate_tapa_script(_kernel_freq = kernel_frequency , _fpga_part_name = FPGA_part_name)
+    suppcodegen.Generate_hw_build_script(knn_config, _kernel_freq = kernel_frequency)
+    suppcodegen.Generate_data_collection_python_script(knn_config)
+
+    ###
+    os.chdir(baseDesignDir)
+    #Run_software_emulation(DEVICE=FPGA_target_name)
+    os.chdir(designSrcDir)
+
+
+
+
+
+
+if __name__ == "__main__":
+
+    singlePE_design_specs = read_singlePE_specs()
+
+    #enumerate all design choices to determine the max number of PEs base on SLR resource and # banks
+    Total_FPGA_resources = {}
+
+    for resource_type in SLR_resource[0]:
+        num_cur_resource = 0
+        for i in range(len(SLR_resource)):
+            num_cur_resource += SLR_resource[i][resource_type]
+
+        Total_FPGA_resources[resource_type] = num_cur_resource
+
+
+    ## Initialize to the max possible amount of PEs, given our port width of 512.
+    total_num_PE = 32
+
+    if (float(singlePE_design_specs['BRAM']) >= 1):
+        tmp_num_PE = int((float(Total_FPGA_resources['BRAM'])) * resource_limit) / float(singlePE_design_specs['BRAM'])
+        total_num_PE = min(tmp_num_PE, total_num_PE)
+    if (float(singlePE_design_specs['DSP']) >= 1):
+        tmp_num_PE = int((float(Total_FPGA_resources['DSP'])) * resource_limit) / float(singlePE_design_specs['DSP'])
+        total_num_PE = min(tmp_num_PE, total_num_PE)
+    if (float(singlePE_design_specs['FF']) >= 1):
+        tmp_num_PE = int((float(Total_FPGA_resources['FF'])) * resource_limit) / float(singlePE_design_specs['FF'])
+        total_num_PE = min(tmp_num_PE, total_num_PE)
+    if (float(singlePE_design_specs['LUT']) >= 1):
+        tmp_num_PE = int((float(Total_FPGA_resources['LUT'])) * resource_limit) / float(singlePE_design_specs['LUT'])
+        total_num_PE = min(tmp_num_PE, total_num_PE)
+    if (float(singlePE_design_specs['URAM']) >= 1):
+        tmp_num_PE = int((float(Total_FPGA_resources['URAM'])) * resource_limit) / float(singlePE_design_specs['URAM'])
+        total_num_PE = min(tmp_num_PE, total_num_PE)
+
+    total_num_PE = int(total_num_PE)
+
+    if (total_num_PE > num_mem_banks):
+        total_num_PE = int(num_mem_banks)
+    print('bw estimate : {}'.format(float(total_num_PE)*float(singlePE_design_specs['bw_usage'])))
+    print('Total num PE = {}'.format(total_num_PE), flush=True)
+
+
+    create_folders_and_files()

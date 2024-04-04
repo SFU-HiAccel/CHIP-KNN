@@ -1,44 +1,68 @@
 #!/usr/bin/python 
 import os
 import re
-import math 
 import subprocess
 import shutil
 from config import *
-from bandwidth_interpolation import *
-from utilization_parse import *
-from hls_run import Run_HLS_Synthesis
+import bandwidth_interpolation as bw
+import utilization_parse as utilparse
+from run_commands import Run_tapa_HLS, Run_software_emulation
 from singlePE_design_generate import Generate_SinglePE_Design
+import supporting_code_generation as suppcodegen
 
-singlePEs_evaluation_file_name = "singlePE_perf_results.log"
-singlePEs_evaluation_file = []
-column_names = '{:>10}, {:>4}, {:>4}, {:>4}, {:>10}, {:>10}, {:>10}, {:>7}, {:>7}, {:>7}, {:>7}, {:>7}'.format( \
-                'N', 'D', 'Dist', 'K', 'port_width', 'buf_size', 'bw_usage', 'BRAM', 'DSP', 'FF', 'LUT', 'URAM')
-singlePEs_evaluation_file.append(column_names + "\n")
 
-baseDir = os.getcwd()
-tmpDesignDirName = 'tmpDesignDir'
-tmpDesignDir = os.path.join(baseDir, tmpDesignDirName)
+if __name__ == "__main__":
+    singlePEs_evaluation_file_name = "singlePE_perf_results.log"
+    singlePEs_evaluation_file = []
+    column_names = '{:>4}, {:>4}, {:>4}, {:>10}, {:>7}, {:>7}, {:>7}, {:>7}, {:>7}'.format( \
+                    'D', 'Dist', 'K', 'bw_usage', 'BRAM', 'DSP', 'FF', 'LUT', 'URAM')
+    singlePEs_evaluation_file.append(column_names + "\n")
 
-for choice in singlePE_template_config:
-    os.mkdir(tmpDesignDir)
-    os.chdir(tmpDesignDir)
+    total_num_PE = 1
 
-    bw_utilization = Interpolate_Bandwidth (memory_type, choice['port_width'], choice['buf_size'])
-    Generate_SinglePE_Design(N, D, Dist, K, choice['port_width'], choice['buf_size'], memory_type)
-    Run_HLS_Synthesis(FPGA_part_name)
-    d = Parse_Utilization('knn.prj/solution0/syn/report/krnl_partialKnn_csynth.rpt')
-    design_choice_perf = '{:>10}, {:>4}, {:>4}, {:>4}, {:>10}, {:>10}, {:>10}, {:>7}, {:>7}, {:>7}, {:>7}, {:>7}'\
-                         .format(N, D, Dist, K, choice['port_width'], choice['buf_size'], \
-                                 bw_utilization, \
+    baseDir = os.getcwd()
+    tmpDesignDirName = 'gen_singlePE_design'
+    tmpDesignDirFullPath = os.path.join(baseDir, tmpDesignDirName)
+
+    os.mkdir(tmpDesignDirFullPath)
+    os.chdir(tmpDesignDirFullPath)
+    os.system("cp -R ../../common .")
+    os.system("cp ../../utils.mk .")
+
+    suppcodegen.Generate_MakeFile(kernel_frequency, _fpga_part_name = FPGA_part_name)
+
+    designSrcDirName = 'src'
+    designSrcDir = os.path.join(tmpDesignDirFullPath, designSrcDirName)
+    os.mkdir(designSrcDir)
+    os.chdir(designSrcDir)
+
+    bw_utilization = bw.Interpolate_Bandwidth (memory_type, max_port_width)
+
+    knn_config = Generate_SinglePE_Design(SW_EMU_N, D, Dist, K, max_port_width, memory_type, data_type_to_use, data_type_int_bits, data_type_fract_bits)
+
+    suppcodegen.Generate_Host_Code(total_num_PE, knn_config)
+    suppcodegen.Generate_Connectivity_Map(memory_type, total_num_PE, max_port_width)
+
+    os.chdir(tmpDesignDirFullPath)
+    Run_software_emulation(DEVICE=FPGA_target_name)
+
+    Run_tapa_HLS(DEVICE=FPGA_target_name)
+    #d = utilparse.Parse_TAPA_Utilization('_x.tapa_HLS.xilinx_u200_xdma_201830_2/report.json')
+    d = utilparse.Parse_Autobridge_Utilization('_x.tapa_HLS.xilinx_u280_xdma_201920_3/autobridge/')
+    design_choice_perf = '{:>4}, {:>4}, {:>4}, {:>10}, {:>7}, {:>7}, {:>7}, {:>7}, {:>7}'\
+                         .format(D, Dist, K, bw_utilization, \
                                  d['BRAM'], d['DSP'], d['FF'], d['LUT'], d['URAM'])
     singlePEs_evaluation_file.append(design_choice_perf + "\n")
 
     os.chdir(baseDir)
-    shutil.rmtree(tmpDesignDir)
+    ### Don't remove the singlePE design dir so the user can examine it, if they want.
+    #shutil.rmtree(tmpDesignDirFullPath)
 
-with open(singlePEs_evaluation_file_name, 'w') as f:
-        f.seek(0)
-        f.writelines(singlePEs_evaluation_file)
+    for line in singlePEs_evaluation_file:
+        print("{}".format(line))
 
-print "SinglePE Exploration Done!"
+    with open(singlePEs_evaluation_file_name, 'w') as f:
+            f.seek(0)
+            f.writelines(singlePEs_evaluation_file)
+
+    print("SinglePE Exploration Done!")
