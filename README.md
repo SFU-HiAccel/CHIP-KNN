@@ -54,7 +54,8 @@ Assuming you are in the directory (`$CHIP-KNN_HOME/scripts`) of the cloned CHIP-
         * This contains the configuration and resource usage of a single PE design. Used by the multi-PE exploration script.
       * `gen_singlePE_design/`
         * This contains the code for the single-PE design.
-    
+    * NOTE: If you experience compilation issues, you may need to modify the include directories in the Makefile. The Makefile is auto-generated in scripts/supporting_code_generation.py, in the function named "Generate_Makefile". Please modify the lines defining "CXXFLAGS", to include your Vitis_HLS install directory.
+
 3. Generate Multi-PE Design
     * Run: `python multiPE_design_exploration.py`
     * Output: `gen_multiPE_design/`
